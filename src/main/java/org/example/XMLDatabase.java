@@ -11,8 +11,12 @@ import java.util.*;
 
 public class XMLDatabase {
 
-    private final File roundsFile = new File("data/rounds.xml");
-    private final File scoresFile = new File("data/scores.xml");
+    private final File roundsFile =
+            new File(getClass().getClassLoader().getResource("data/rounds.xml").getFile());
+
+    private final File scoresFile =
+            new File(getClass().getClassLoader().getResource("data/scores.xml").getFile());
+
 
     public XMLDatabase() {
         ensureFiles();

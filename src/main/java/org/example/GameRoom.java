@@ -18,6 +18,10 @@ public class GameRoom {
 
     private final Lock lock = new ReentrantLock();
 
+    // Scheduler para terminar rondas automáticamente
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private volatile boolean roundFinished = true;
+
     public GameRoom(String id, int maxPlayers) {
         this.id = id;
         this.maxPlayers = maxPlayers;
@@ -52,14 +56,27 @@ public class GameRoom {
         this.rounds = loaded;
         this.index = 0;
         this.started = true;
-        this.rounds.get(0).start();
+        startCurrentRound();
+    }
+
+    private void startCurrentRound() {
+        Round r = rounds.get(index);
+        r.start();
+        roundFinished = false;
+        answered.clear();
+
+        // Programa el fin de la ronda automáticamente
+        scheduler.schedule(() -> {
+            roundFinished = true;
+            System.out.println("Ronda " + (index + 1) + " finalizada automáticamente.");
+        }, r.timeLimit, TimeUnit.SECONDS);
     }
 
     public boolean nextRound() {
+        if (!roundFinished) return false; // No se puede avanzar hasta que termine la ronda
         index++;
         if (index >= rounds.size()) return false;
-        rounds.get(index).start();
-        answered.clear();
+        startCurrentRound();
         return true;
     }
 
@@ -73,6 +90,12 @@ public class GameRoom {
     // ---------------------------------------------------------
 
     public SubmitResult submitAnswer(String player, String answer, XMLDatabase db) {
+        if (roundFinished) {
+            // Ronda terminada, no aceptar más respuestas
+            Round r = getCurrentRound();
+            return new SubmitResult(false, 0, r != null ? r.word : "");
+        }
+
         Round r = getCurrentRound();
         if (r == null) return new SubmitResult(false, 0, "");
 
@@ -85,6 +108,7 @@ public class GameRoom {
         if (correct) {
             scores.put(player, scores.get(player) + points);
             db.saveScore(player, points, id);
+            roundFinished = true; // termina la ronda si alguien acierta
         }
 
         answered.add(player);
