@@ -140,12 +140,11 @@ public class GameRoom {
         sb.append("<round>").append(index + 1).append("</round>");
         sb.append("<word>").append(r.word).append("</word>");
         sb.append("<images>");
-
         for (String img : r.images)
             sb.append("<img>").append(img).append("</img>");
-
         sb.append("</images>");
-        sb.append("<timeLimit>").append(r.timeLimit).append("</timeLimit>");
+        // <-- usamos <time> para que coincida con rounds.xml y con lo que espera el cliente
+        sb.append("<time>").append(r.timeLimit).append("</time>");
         sb.append("</response>");
 
         return sb.toString();
@@ -163,7 +162,8 @@ public class GameRoom {
             for (String img : r.images)
                 sb.append("<img>").append(img).append("</img>");
             sb.append("</images>");
-            sb.append("<timeLimit>").append(r.timeLimit).append("</timeLimit>");
+            // <-- usar <time>
+            sb.append("<time>").append(r.timeLimit).append("</time>");
         }
         sb.append("<scores>");
         players.forEach(p ->
@@ -174,6 +174,7 @@ public class GameRoom {
         sb.append("</response>");
         return sb.toString();
     }
+
 
 
     public String getFinalResultsXML() {

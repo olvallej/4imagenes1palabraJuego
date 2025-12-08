@@ -261,55 +261,91 @@ public class GameClientGUI extends Application {
     // ============================================================
     //                      INICIAR JUEGO
     // ============================================================
+    // ============================================================
+//                      INICIAR JUEGO (cliente)
+// ============================================================
     private void startGame() {
         try {
+            // Enviar roomId y playerName al servidor
             String data = "roomId=" + roomId + "&playerName=" + playerName;
             String response = sendPost("/start_game", data);
 
-            if (!response.contains("<rounds>")) {
+            // Comprobar errores
+            if (response.contains("<status>ERROR</status>") || response.contains("<status>ERROR")) {
+                String msg = extractValue(response, "msg");
+                if (msg.isEmpty()) msg = extractValue(response, "message"); // por si usas otro tag
+                if (msg.contains("Min 2 jugadores")) {
+                    showAlert("No se puede iniciar", "La sala debe tener al menos 2 jugadores para iniciar", Alert.AlertType.WARNING);
+                } else if (msg.contains("Solo el host")) {
+                    showAlert("Acceso denegado", "Solo el host puede iniciar el juego", Alert.AlertType.WARNING);
+                } else {
+                    showAlert("Error", msg.isEmpty() ? "Error al iniciar el juego" : msg, Alert.AlertType.ERROR);
+                }
+                return;
+            }
+
+            // No hay ronda
+            if (response.contains("<status>NO_ROUND</status>") || response.contains("<status>NO_ROUND")) {
                 showAlert("Error", "No hay rondas disponibles", Alert.AlertType.ERROR);
                 return;
             }
 
-            // Tomar la primera ronda
-            String roundsXml = response.split("<rounds>")[1].split("</rounds>")[0].trim();
-            String[] roundBlocks = roundsXml.split("<round>");
-            if (roundBlocks.length < 2) {
-                showAlert("Error", "No se pudo obtener la primera ronda", Alert.AlertType.ERROR);
+            // Esperamos un <status>OK</status> con los datos de la ronda
+            if (!response.contains("<status>OK</status>")) {
+                showAlert("Error", "Respuesta inesperada del servidor", Alert.AlertType.ERROR);
                 return;
             }
 
-            String firstRound = roundBlocks[1].split("</round>")[0].trim();
+            // Obtener número de ronda (si viene)
+            String roundStr = extractValue(response, "round");
+            int round = 1;
+            if (!roundStr.isEmpty()) {
+                try { round = Integer.parseInt(roundStr); } catch (NumberFormatException ignored) {}
+            }
 
-            String word = extractValue(firstRound, "word").trim();
+            // Palabra
+            String word = extractValue(response, "word");
             if (word.isEmpty()) {
-                showAlert("Error", "Palabra de la ronda no definida", Alert.AlertType.ERROR);
-                return;
+                // Si servidor devuelve <word> dentro de un bloque distinto, intentar buscar "correctWord" u otros
+                word = extractValue(response, "correctWord");
             }
 
-            String timeStr = extractValue(firstRound, "time").trim();
-            if (timeStr.isEmpty()) {
-                showAlert("Error", "Tiempo de ronda no definido", Alert.AlertType.ERROR);
-                return;
-            }
-            int timeLimit = Integer.parseInt(timeStr);
+            // Tiempo: aceptar timeLimit o time (compatibilidad)
+            // Tiempo
+            String timeStr = extractValue(response, "timeLimit");
+            if (timeStr.isEmpty()) timeStr = extractValue(response, "time");
 
-            List<String> imagesList = extractList(firstRound, "img");
-            String[] images = imagesList.toArray(new String[0]);
-            if (images.length == 0) {
-                showAlert("Error", "No hay imágenes para la ronda", Alert.AlertType.ERROR);
+            // Normalizar
+            timeStr = timeStr.replace("\n", "").replace("\r", "").trim();
+
+            int timeLimit = 0;
+            try {
+                timeLimit = Integer.parseInt(timeStr);
+            } catch (Exception e) {
+                System.out.println("ERROR AL PARSEAR TIEMPO: [" + timeStr + "]");
+            }
+
+
+            // Imágenes: usar tu helper extractImages que busca <images> y <img>...
+            String[] images = extractImages(response);
+
+            // Validaciones
+            if (word.isEmpty() || images.length == 0 || timeLimit <= 0) {
+                showAlert("Error", "Datos de ronda inválidos (palabra/imágenes/tiempo). Revisa el XML del servidor.", Alert.AlertType.ERROR);
                 return;
             }
 
             // Mostrar la pantalla de juego
             hasAnswered = false;
-            showGameScreen(1, word, images, timeLimit);
+            showGameScreen(round, word, images, timeLimit);
 
         } catch (Exception e) {
             e.printStackTrace();
             showAlert("Error", "No se pudo iniciar la ronda: " + e.getMessage(), Alert.AlertType.ERROR);
         }
     }
+
+
 
 
 
@@ -320,7 +356,7 @@ public class GameClientGUI extends Application {
         BorderPane root = new BorderPane();
         root.setStyle("-fx-background-color: #f5f5f5;");
 
-        // HEADER
+        // ================= HEADER =================
         VBox header = new VBox(10);
         header.setAlignment(Pos.CENTER);
         header.setPadding(new Insets(20));
@@ -340,7 +376,7 @@ public class GameClientGUI extends Application {
 
         header.getChildren().addAll(roundLabel, progressBar, timerLabel);
 
-        // GRID DE IMÁGENES (2x2)
+        // ================= GRID DE IMÁGENES =================
         GridPane imageGrid = new GridPane();
         imageGrid.setAlignment(Pos.CENTER);
         imageGrid.setHgap(20);
@@ -352,7 +388,7 @@ public class GameClientGUI extends Application {
             imageGrid.add(imageBox, i % 2, i / 2);
         }
 
-        // ÁREA DE RESPUESTA
+        // ================= ÁREA DE RESPUESTA =================
         VBox answerArea = new VBox(15);
         answerArea.setAlignment(Pos.CENTER);
         answerArea.setPadding(new Insets(20));
@@ -386,6 +422,7 @@ public class GameClientGUI extends Application {
 
         answerArea.getChildren().addAll(questionLabel, hintLabel, answerField, submitBtn, warningLabel);
 
+        // ================= SET SCENE =================
         root.setTop(header);
         root.setCenter(imageGrid);
         root.setBottom(answerArea);
@@ -393,8 +430,13 @@ public class GameClientGUI extends Application {
         Scene scene = new Scene(root, 850, 750);
         primaryStage.setScene(scene);
 
-        // INICIAR TIMER
+        // ================= INICIAR TIMER =================
+        if (timer != null) {
+            timer.stop();
+            timer = null;
+        }
         timeRemaining = timeLimit;
+
         timer = new Timeline(new KeyFrame(Duration.seconds(1), event -> {
             timeRemaining--;
             timerLabel.setText("⏱️ " + timeRemaining + "s");
@@ -420,6 +462,7 @@ public class GameClientGUI extends Application {
         timer.setCycleCount(timeLimit);
         timer.play();
     }
+
 
 
     // ============================================================
@@ -784,17 +827,26 @@ public class GameClientGUI extends Application {
 // ============================================================
 
     private String extractValue(String xml, String key) {
+        if (xml == null || key == null) return "";
+
         try {
             String open = "<" + key + ">";
             String close = "</" + key + ">";
+
             int start = xml.indexOf(open);
-            int end = xml.indexOf(close);
-            if (start == -1 || end == -1) return "";
-            return xml.substring(start + open.length(), end).trim();
+            if (start == -1) return "";
+
+            start += open.length();
+            int end = xml.indexOf(close, start);
+            if (end == -1) return "";
+
+            return xml.substring(start, end).trim();
+
         } catch (Exception e) {
             return "";
         }
     }
+
 
     private String extractValueFromBlock(String block, String key) {
         return extractValue(block, key);
@@ -805,43 +857,125 @@ public class GameClientGUI extends Application {
 // ============================================================
 
     private VBox createImageBox(String imagePath, int number) {
-        VBox box = new VBox(10);
+        VBox box = new VBox(8);
         box.setAlignment(Pos.CENTER);
-        box.setPadding(new Insets(15));
-        box.setPrefSize(280, 250);
+        box.setPadding(new Insets(10));
+        box.setPrefSize(220, 180); // REDUCIDO
+        box.setMaxSize(220, 180);   // MÁXIMO
+        box.setStyle("-fx-background-color: white; -fx-background-radius: 10; " +
+                "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 8, 0, 0, 2);");
 
-        // Construir la URL completa hacia el servidor
-        String url = "http://localhost:5555/" + imagePath;
+        ImageView imgView = new ImageView();
+        imgView.setFitWidth(200);   // REDUCIDO
+        imgView.setFitHeight(140);  // REDUCIDO
+        imgView.setPreserveRatio(true);
+        imgView.setSmooth(true);
 
-        ImageView imgView;
-        try {
-            Image img = new Image(url, 250, 180, true, true);
-            imgView = new ImageView(img);
-        } catch (Exception e) {
-            imgView = new ImageView();
-            imgView.setFitWidth(250);
-            imgView.setFitHeight(180);
-        }
+        Label numberLabel = new Label("📷 " + number);
+        numberLabel.setFont(Font.font("Arial", FontWeight.BOLD, 12));
+        numberLabel.setTextFill(Color.web("#666666"));
 
-        Label numberLabel = new Label("📷 Imagen " + number);
-        numberLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        Label loadingLabel = new Label("Cargando...");
+        loadingLabel.setFont(Font.font("Arial", 10));
+        loadingLabel.setTextFill(Color.GRAY);
 
-        box.getChildren().addAll(imgView, numberLabel);
+        box.getChildren().addAll(imgView, numberLabel, loadingLabel);
+
+        // Cargar imagen de forma asíncrona
+        new Thread(() -> {
+            try {
+                String imageUrl = "http://localhost:5555/" + imagePath;
+                System.out.println("🔍 Cargando imagen desde: " + imageUrl);
+
+                Image img = new Image(imageUrl, true);
+
+                img.progressProperty().addListener((obs, oldVal, newVal) -> {
+                    if (newVal.doubleValue() >= 1.0) {
+                        Platform.runLater(() -> {
+                            if (!img.isError()) {
+                                imgView.setImage(img);
+                                box.getChildren().remove(loadingLabel);
+                                System.out.println("✓ Imagen cargada: " + imagePath);
+                            } else {
+                                loadingLabel.setText("❌ Error");
+                                loadingLabel.setTextFill(Color.RED);
+                                System.err.println("❌ Error de imagen: " + imagePath);
+                                if (img.getException() != null) {
+                                    System.err.println("   Causa: " + img.getException().getMessage());
+                                }
+                            }
+                        });
+                    }
+                });
+
+                if (img.isError()) {
+                    Platform.runLater(() -> {
+                        loadingLabel.setText("❌ No encontrada");
+                        loadingLabel.setTextFill(Color.RED);
+                        System.err.println("❌ Imagen no disponible: " + imagePath);
+                    });
+                }
+
+            } catch (Exception e) {
+                System.err.println("❌ Excepción cargando imagen: " + imagePath);
+                e.printStackTrace();
+
+                Platform.runLater(() -> {
+                    loadingLabel.setText("❌ Error");
+                    loadingLabel.setTextFill(Color.RED);
+                });
+            }
+        }).start();
+
         return box;
     }
 
+
     private String[] extractImages(String xml) {
-        List<String> list = new ArrayList<>();
+        List<String> imgs = new ArrayList<>();
+        if (xml == null) return new String[0];
+
         int index = 0;
+
         while (true) {
             int start = xml.indexOf("<img>", index);
             if (start == -1) break;
+
+            start += 5; // longitud "<img>"
             int end = xml.indexOf("</img>", start);
             if (end == -1) break;
-            list.add(xml.substring(start + 5, end).trim());
-            index = end + 6;
+
+            String value = xml.substring(start, end).trim();
+            if (!value.isEmpty()) {
+                imgs.add(value);
+            }
+
+            index = end + 6; // saltar "</img>"
         }
-        return list.toArray(new String[0]);
+
+        return imgs.toArray(new String[0]);
+    }
+
+
+    private Image loadImageFromResources(String path) {
+        try {
+            // Normalizar ruta del XML: "data/imagenes/x.png"
+            String fixed = path.startsWith("data/")
+                    ? path
+                    : "data/" + path;
+
+            InputStream is = getClass().getClassLoader().getResourceAsStream(fixed);
+            if (is == null) {
+                System.out.println("❌ No se encontró la imagen: " + fixed);
+                return null;
+            }
+
+            return new Image(is);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
 

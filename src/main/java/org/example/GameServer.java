@@ -25,31 +25,81 @@ public class GameServer {
             server.createContext("/get_status", GameServer::getStatus);
             server.createContext("/leave_room", GameServer::leaveRoom);
 
-            server.createContext("/imagenes", exchange -> {
-                String path = "imagenes" + exchange.getRequestURI().getPath().replace("/imagenes", "");
-                File file = new File(path);
+            // HANDLER CORREGIDO PARA IMÁGENES
+            server.createContext("/data/imagenes", exchange -> {
+                try {
+                    // Obtener la ruta completa: /data/imagenes/perro1.png
+                    String requestPath = exchange.getRequestURI().getPath();
+                    System.out.println("📷 Petición de imagen: " + requestPath);
 
-                if (!file.exists() || file.isDirectory()) {
-                    exchange.sendResponseHeaders(404, 0);
+                    // Remover el / inicial: data/imagenes/perro1.png
+                    String filePath = requestPath.substring(1);
+
+                    // Intentar cargar desde recursos
+                    InputStream imageStream = GameServer.class.getClassLoader()
+                            .getResourceAsStream(filePath);
+
+                    if (imageStream == null) {
+                        // Si no está en recursos, intentar desde filesystem
+                        File file = new File(filePath);
+                        if (file.exists() && file.isFile()) {
+                            imageStream = new FileInputStream(file);
+                            System.out.println("✓ Imagen encontrada en filesystem: " + filePath);
+                        }
+                    } else {
+                        System.out.println("✓ Imagen encontrada en recursos: " + filePath);
+                    }
+
+                    if (imageStream == null) {
+                        System.err.println("❌ Imagen no encontrada: " + filePath);
+                        String error = "404 - Imagen no encontrada: " + filePath;
+                        exchange.sendResponseHeaders(404, error.length());
+                        exchange.getResponseBody().write(error.getBytes());
+                        exchange.getResponseBody().close();
+                        return;
+                    }
+
+                    // Determinar tipo MIME
+                    String mime = "image/png";
+                    if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) {
+                        mime = "image/jpeg";
+                    } else if (filePath.endsWith(".gif")) {
+                        mime = "image/gif";
+                    }
+
+                    // Leer bytes de la imagen
+                    byte[] imageBytes = imageStream.readAllBytes();
+                    imageStream.close();
+
+                    // Enviar respuesta
+                    exchange.getResponseHeaders().set("Content-Type", mime);
+                    exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+                    exchange.sendResponseHeaders(200, imageBytes.length);
+
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(imageBytes);
+                    os.close();
+
+                    System.out.println("✓ Imagen enviada: " + filePath +
+                            " (" + imageBytes.length + " bytes)");
+
+                } catch (Exception e) {
+                    System.err.println("❌ Error al servir imagen: " + e.getMessage());
+                    e.printStackTrace();
+
+                    String error = "500 - Error del servidor";
+                    exchange.sendResponseHeaders(500, error.length());
+                    exchange.getResponseBody().write(error.getBytes());
                     exchange.getResponseBody().close();
-                    return;
-                }
-
-                String mime = "image/png";
-                if (path.endsWith(".jpg") || path.endsWith(".jpeg")) mime = "image/jpeg";
-
-                exchange.getResponseHeaders().set("Content-Type", mime);
-                exchange.sendResponseHeaders(200, file.length());
-                try (OutputStream os = exchange.getResponseBody();
-                     FileInputStream fis = new FileInputStream(file)) {
-                    fis.transferTo(os);
                 }
             });
 
             server.setExecutor(Executors.newFixedThreadPool(10));
             server.start();
 
-            System.out.println("Servidor iniciado en http://localhost:8080/");
+            System.out.println("🚀 Servidor iniciado en http://localhost:5555/");
+            System.out.println("📁 Sirviendo imágenes desde: data/imagenes/");
+
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -160,7 +210,6 @@ public class GameServer {
             return;
         }
 
-
         room.startGame(database.loadRounds());
 
         respond(ex, 200, room.getRoundXML());
@@ -190,7 +239,6 @@ public class GameServer {
         respond(ex, 200, xml);
     }
 
-
     private static void nextRound(HttpExchange ex) throws IOException {
         Map<String, String> params = parseParams(readBody(ex));
 
@@ -214,10 +262,8 @@ public class GameServer {
             return;
         }
 
-        // Devuelve si el juego ha empezado y datos de la ronda actual
         respond(ex, 200, room.getStatusXML());
     }
-
 
     private static void leaveRoom(HttpExchange ex) throws IOException {
         Map<String, String> params = parseParams(readBody(ex));

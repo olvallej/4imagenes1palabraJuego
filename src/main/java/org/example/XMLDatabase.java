@@ -8,6 +8,8 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.File;
 import java.util.*;
+import java.io.InputStream;
+
 
 public class XMLDatabase {
 
@@ -53,35 +55,70 @@ public class XMLDatabase {
     // ---------------------------------------------------------
 
     public List<Round> loadRounds() {
-        List<Round> result = new ArrayList<>();
+        List<Round> rounds = new ArrayList<>();
 
-        try {
-            Document doc = DocumentBuilderFactory.newInstance()
-                    .newDocumentBuilder().parse(roundsFile);
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("data/rounds.xml")) {
 
-            NodeList list = doc.getElementsByTagName("round");
-
-            for (int i = 0; i < list.getLength(); i++) {
-                Element e = (Element) list.item(i);
-
-                String word = e.getElementsByTagName("word").item(0).getTextContent();
-
-                NodeList imgs = e.getElementsByTagName("img");
-                String[] arr = new String[imgs.getLength()];
-                for (int j = 0; j < imgs.getLength(); j++)
-                    arr[j] = imgs.item(j).getTextContent();
-
-                int time = Integer.parseInt(
-                        e.getElementsByTagName("time").item(0).getTextContent());
-
-                result.add(new Round(word, arr, time));
+            if (is == null) {
+                throw new IllegalStateException("No se encontró el archivo rounds.xml en resources/data/");
             }
 
-        } catch (Exception ex) {
-            ex.printStackTrace();
+            Document doc = DocumentBuilderFactory.newInstance()
+                    .newDocumentBuilder().parse(is);
+
+            NodeList roundNodes = doc.getElementsByTagName("round");
+
+            for (int i = 0; i < roundNodes.getLength(); i++) {
+                Element roundElement = (Element) roundNodes.item(i);
+
+                // Obtener palabra
+                Node wordNode = roundElement.getElementsByTagName("word").item(0);
+                if (wordNode == null || wordNode.getTextContent().trim().isEmpty()) {
+                    System.err.println("⚠️ Ronda " + (i + 1) + " sin <word>, se omitirá");
+                    continue;
+                }
+                String word = wordNode.getTextContent().trim();
+
+                // Obtener imágenes
+                NodeList imgNodes = roundElement.getElementsByTagName("img");
+                List<String> images = new ArrayList<>();
+                for (int j = 0; j < imgNodes.getLength(); j++) {
+                    String imgPath = imgNodes.item(j).getTextContent().trim();
+                    if (!imgPath.isEmpty()) {
+                        images.add(imgPath);
+                    }
+                }
+                if (images.isEmpty()) {
+                    System.err.println("⚠️ Ronda '" + word + "' no tiene imágenes, se omitirá");
+                    continue;
+                }
+
+                // Obtener tiempo
+                Node timeNode = roundElement.getElementsByTagName("time").item(0);
+                if (timeNode == null || timeNode.getTextContent().trim().isEmpty()) {
+                    System.err.println("⚠️ Ronda '" + word + "' sin <time>, se omitirá");
+                    continue;
+                }
+                int time;
+                try {
+                    time = Integer.parseInt(timeNode.getTextContent().trim());
+                } catch (NumberFormatException e) {
+                    System.err.println("⚠️ Ronda '" + word + "' tiene <time> inválido, se omitirá");
+                    continue;
+                }
+
+                rounds.add(new Round(word, images.toArray(new String[0]), time));
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
-        return result;
+        if (rounds.isEmpty()) {
+            throw new IllegalStateException("No se cargaron rondas válidas desde rounds.xml");
+        }
+
+        return rounds;
     }
 
     // ---------------------------------------------------------
