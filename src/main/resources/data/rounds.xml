@@ -1,28 +1,28 @@
 <rounds>
     <round>
         <word>PERRO</word>
-        <img>perro1.png</img>
-        <img>perro2.jpg</img>
-        <img>perro3.jpg</img>
-        <img>perro4.jpg</img>
+        <img>imagenes/perro1.png</img>
+        <img>imagenes/perro2.jpg</img>
+        <img>imagenes/perro3.jpg</img>
+        <img>imagenes/perro4.jpg</img>
         <time>30</time>
     </round>
 
     <round>
         <word>PLAYA</word>
-        <img>playa1.jpg</img>
-        <img>playa2.jpg</img>
-        <img>playa3.jpg</img>
-        <img>playa4.jpg</img>
+        <img>imagenes/playa1.jpg</img>
+        <img>imagenes/playa2.jpg</img>
+        <img>imagenes/playa3.jpg</img>
+        <img>imagenes/playa4.jpg</img>
         <time>30</time>
     </round>
 
     <round>
         <word>MUSICA</word>
-        <img>musica1.jpg</img>
-        <img>musica2.jpg</img>
-        <img>musica3.jpg</img>
-        <img>musica4.jpg</img>
+        <img>imagenes/musica1.jpg</img>
+        <img>imagenes/musica2.jpg</img>
+        <img>imagenes/musica3.jpg</img>
+        <img>imagenes/musica4.jpg</img>
         <time>30</time>
     </round>
 </rounds>

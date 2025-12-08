@@ -25,6 +25,27 @@ public class GameServer {
             server.createContext("/get_status", GameServer::getStatus);
             server.createContext("/leave_room", GameServer::leaveRoom);
 
+            server.createContext("/imagenes", exchange -> {
+                String path = "imagenes" + exchange.getRequestURI().getPath().replace("/imagenes", "");
+                File file = new File(path);
+
+                if (!file.exists() || file.isDirectory()) {
+                    exchange.sendResponseHeaders(404, 0);
+                    exchange.getResponseBody().close();
+                    return;
+                }
+
+                String mime = "image/png";
+                if (path.endsWith(".jpg") || path.endsWith(".jpeg")) mime = "image/jpeg";
+
+                exchange.getResponseHeaders().set("Content-Type", mime);
+                exchange.sendResponseHeaders(200, file.length());
+                try (OutputStream os = exchange.getResponseBody();
+                     FileInputStream fis = new FileInputStream(file)) {
+                    fis.transferTo(os);
+                }
+            });
+
             server.setExecutor(Executors.newFixedThreadPool(10));
             server.start();
 
@@ -82,6 +103,7 @@ public class GameServer {
         int max = Integer.parseInt(params.getOrDefault("maxPlayers", "6"));
 
         GameRoom room = new GameRoom(roomId, max);
+        room.setHost(playerName);
         room.addPlayer(playerName);
 
         rooms.put(roomId, room);
@@ -132,6 +154,13 @@ public class GameServer {
             return;
         }
 
+        String playerName = params.getOrDefault("playerName", "Jugador");
+        if (!room.isHost(playerName)) {
+            respond(ex, 403, "<response><status>ERROR</status><msg>Solo el host puede iniciar</msg></response>");
+            return;
+        }
+
+
         room.startGame(database.loadRounds());
 
         respond(ex, 200, room.getRoundXML());
@@ -145,11 +174,22 @@ public class GameServer {
         String answer = params.getOrDefault("answer", "");
 
         GameRoom room = rooms.get(roomId);
+        if (room == null) {
+            respond(ex, 404, "<response><status>ERROR</status><msg>Sala no existe</msg></response>");
+            return;
+        }
 
         SubmitResult result = room.submitAnswer(player, answer, database);
 
-        respond(ex, 200, result.toXML());
+        String xml = "<response>" +
+                "<status>" + (result.correct ? "CORRECT" : "INCORRECT") + "</status>" +
+                "<points>" + result.points + "</points>" +
+                "<correctWord>" + result.correctWord + "</correctWord>" +
+                "</response>";
+
+        respond(ex, 200, xml);
     }
+
 
     private static void nextRound(HttpExchange ex) throws IOException {
         Map<String, String> params = parseParams(readBody(ex));
@@ -169,9 +209,15 @@ public class GameServer {
         String roomId = params.get("roomId");
 
         GameRoom room = rooms.get(roomId);
+        if (room == null) {
+            respond(ex, 404, "<response><status>ERROR</status><msg>Sala no existe</msg></response>");
+            return;
+        }
 
+        // Devuelve si el juego ha empezado y datos de la ronda actual
         respond(ex, 200, room.getStatusXML());
     }
+
 
     private static void leaveRoom(HttpExchange ex) throws IOException {
         Map<String, String> params = parseParams(readBody(ex));
