@@ -67,8 +67,8 @@ public class GameServer {
                         mime = "image/gif";
                     }
 
-                    // Leer bytes de la imagen
-                    byte[] imageBytes = imageStream.readAllBytes();
+                    // Leer bytes de la imagen (compatible con Java 8)
+                    byte[] imageBytes = readAllBytes(imageStream);
                     imageStream.close();
 
                     // Enviar respuesta
@@ -109,6 +109,17 @@ public class GameServer {
     // UTILIDADES
     // -----------------------------------------------------------------
 
+    // Método auxiliar para leer todos los bytes (compatible con Java 8)
+    private static byte[] readAllBytes(InputStream inputStream) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        int nRead;
+        byte[] data = new byte[16384];
+        while ((nRead = inputStream.read(data, 0, data.length)) != -1) {
+            buffer.write(data, 0, nRead);
+        }
+        return buffer.toByteArray();
+    }
+
     private static Map<String, String> parseParams(String body) {
         Map<String, String> params = new HashMap<>();
         if (body == null) return params;
@@ -116,17 +127,22 @@ public class GameServer {
         for (String pair : body.split("&")) {
             String[] kv = pair.split("=", 2);
             if (kv.length == 2) {
-                params.put(
-                        URLDecoder.decode(kv[0], StandardCharsets.UTF_8),
-                        URLDecoder.decode(kv[1], StandardCharsets.UTF_8)
-                );
+                try {
+                    params.put(
+                            URLDecoder.decode(kv[0], StandardCharsets.UTF_8.name()),
+                            URLDecoder.decode(kv[1], StandardCharsets.UTF_8.name())
+                    );
+                } catch (UnsupportedEncodingException e) {
+                    // UTF-8 siempre está disponible
+                    e.printStackTrace();
+                }
             }
         }
         return params;
     }
 
     private static String readBody(HttpExchange ex) throws IOException {
-        return new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        return new String(readAllBytes(ex.getRequestBody()), StandardCharsets.UTF_8);
     }
 
     private static void respond(HttpExchange ex, int code, String xml) {
